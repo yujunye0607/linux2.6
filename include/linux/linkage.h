@@ -40,6 +40,7 @@
 #define NORET_AND     noreturn,
 
 #ifndef FASTCALL
+/* 空宏 从而在所有现代平台上禁用这个过时的优化*/
 #define FASTCALL(x)	x
 #define fastcall
 #endif

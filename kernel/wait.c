@@ -61,13 +61,29 @@ prepare_to_wait(wait_queue_head_t *q, wait_queue_t *wait, int state)
 {
 	unsigned long flags;
 
+	// 清除排他标志位（清除独占标志，使其成为一个非独占等待项）
+	// 对于非独占等待项：wake_up 会一次性唤醒队列中所有的非独占等待项。
+	// 对于独占等待项：wake_up 只会唤醒队列中的第一个独占等待项，然后就停止继续唤醒。
+	/* 如果没有独占标志（全部非独占）：每次资源可用时，wake_up 会唤醒全部100个进程。
+	 * 但最终只有4个能获得资源，其余96个被唤醒后发现自己还是抢不到，只能再次睡眠。这会消耗大量的CPU（即“惊群”）。
+	 * 如果有了独占标志：可以让所有等待者都标记为独占。当资源可用时，wake_up 只会唤醒第一个（比如队列头部的）进程。
+	 * 这个进程拿到资源后，会在完成工作后再次调用wake_up，唤醒下一个，依次类推。这样，每次只有一个进程被唤醒，大大减轻了系统负担。 */
 	wait->flags &= ~WQ_FLAG_EXCLUSIVE;
 	spin_lock_irqsave(&q->lock, flags);
-	if (list_empty(&wait->task_list))
+	if (list_empty(&wait->task_list))//将"入队"和"设状态"作为一个原子操作完成后，在真正睡眠前又检查了一次条件。如果条件在中间变成真，这次检查就能发现并阻止睡眠
 		__add_wait_queue(q, wait);
 	/*
 	 * don't alter the task state if this is just going to
 	 * queue an async wait queue callback
+	 */
+	/* 
+	 * 如果是同步等待项，设置当前状态为指定状态
+	#define is_sync_wait(wait)	(!(wait) || ((wait)->task))
+	同步等待 (task 不为空)：wait->task 指向一个进程（通常是 current）。
+	这意味着，这个等待项代表一个正在运行的进程，它希望自己进入睡眠。当事件发生时，内核需要唤醒这个进程。这就是我们通常所说的“同步”等待。
+	异步等待 (task 为空)：wait->task 是 NULL。
+	这意味着，这个等待项不代表一个要睡眠的进程，而是代表一个回调函数。
+	这种等待项是通过 init_waitqueue_func_entry() 创建的，目的是在事件发生时执行一段自定义代码（异步回调），而不是唤醒一个进程。
 	 */
 	if (is_sync_wait(wait))
 		set_current_state(state);
@@ -83,6 +99,8 @@ prepare_to_wait_exclusive(wait_queue_head_t *q, wait_queue_t *wait, int state)
 	wait->flags |= WQ_FLAG_EXCLUSIVE;
 	spin_lock_irqsave(&q->lock, flags);
 	if (list_empty(&wait->task_list))
+	// 排他等待者 不会 “插队”，必须排在 非排他等待者 后面，避免唤醒混乱、饿死、惊群
+	// 该函数通常给一些互斥进程使用
 		__add_wait_queue_tail(q, wait);
 	/*
 	 * don't alter the task state if this is just going to

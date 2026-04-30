@@ -82,7 +82,8 @@ static inline void init_waitqueue_head(wait_queue_head_t *q)
 	q->lock = SPIN_LOCK_UNLOCKED;
 	INIT_LIST_HEAD(&q->task_list);
 }
-
+/* 	进程等待项	让当前进程休眠，等唤醒
+	固定为内核的 default_wake_function，行为就是直接唤醒 private 指向的进程 */
 static inline void init_waitqueue_entry(wait_queue_t *q, struct task_struct *p)
 {
 	q->flags = 0;
@@ -90,6 +91,12 @@ static inline void init_waitqueue_entry(wait_queue_t *q, struct task_struct *p)
 	q->func = default_wake_function;
 }
 
+/* 初始化等待队列条目
+ * @q: 等待队列条目
+ * @task: 回调等待项 注册一个函数，唤醒时调用 不关联任何进程 不会休眠当前进程 
+ * 我不想休眠，我只想在别人被唤醒的时候，顺便执行一段我的代码
+ * @func: 唤醒函数:由调用者自己指定 (func)，可以实现任意复杂的逻辑
+ */
 static inline void init_waitqueue_func_entry(wait_queue_t *q,
 					wait_queue_func_t func)
 {
@@ -116,6 +123,11 @@ extern void FASTCALL(add_wait_queue(wait_queue_head_t *q, wait_queue_t * wait));
 extern void FASTCALL(add_wait_queue_exclusive(wait_queue_head_t *q, wait_queue_t * wait));
 extern void FASTCALL(remove_wait_queue(wait_queue_head_t *q, wait_queue_t * wait));
 
+/*
+ * @head: 等待队列头
+ * @new: 新的等待队列条目
+ * 将一个等待队列项（wait_queue_t）添加到一个等待队列头（wait_queue_head_t）的链表头部
+ */
 static inline void __add_wait_queue(wait_queue_head_t *head, wait_queue_t *new)
 {
 	list_add(&new->task_list, &head->task_list);
@@ -124,12 +136,20 @@ static inline void __add_wait_queue(wait_queue_head_t *head, wait_queue_t *new)
 /*
  * Used for wake-one threads:
  */
+/* 将一个等待队列项（wait_queue_t）添加到一个等待队列头（wait_queue_head_t）的链表尾部
+ * 通过add_wait_queue_exclusive调用
+ */
 static inline void __add_wait_queue_tail(wait_queue_head_t *head,
 						wait_queue_t *new)
 {
 	list_add_tail(&new->task_list, &head->task_list);
 }
 
+/*
+ * @head: 等待队列头
+ * @old: 要删除的等待队列条目
+ * 将一个等待队列项（wait_queue_t）从等待队列头（wait_queue_head_t）的链表中删除
+ */
 static inline void __remove_wait_queue(wait_queue_head_t *head,
 							wait_queue_t *old)
 {
@@ -156,6 +176,11 @@ wait_queue_head_t *FASTCALL(bit_waitqueue(void *, int));
 #define	wake_up_locked(x)		__wake_up_locked((x), TASK_UNINTERRUPTIBLE | TASK_INTERRUPTIBLE)
 #define wake_up_interruptible_sync(x)   __wake_up_sync((x),TASK_INTERRUPTIBLE, 1)
 
+ /* Linux 2.6之后添加了新的方式实现进程睡眠等待
+  * 将“设置进程状态”和“添加等待队列项”这两个操作打包成一个原子操作，从而避免了经典的“唤醒丢失”竞态条件。
+  * 这正是我们之前提到 sleep_on 的主要缺陷，而 prepare_to_wait 正是现代且正确的解决方案。
+  */
+/*  */
 #define __wait_event(wq, condition) 					\
 do {									\
 	DEFINE_WAIT(__wait);						\

@@ -176,6 +176,10 @@ extern void scheduler_tick(void);
 extern unsigned long cache_decay_ticks;
 
 /* Attach to any functions which should be ignored in wchan output. */
+/* 把函数放到专门的 .sched.text 代码段中，让调度器代码集中存放、提高缓存命中率、保证调度性能极致稳定
+ * __attribute__：GCC 编译器扩展指令
+ * __section__：告诉编译器把这段代码/数据放到指定段
+ * .sched.text：专门给调度器（scheduler）用的代码段名字*/
 #define __sched		__attribute__((__section__(".sched.text")))
 /* Is this address in the __sched functions? */
 extern int in_sched_functions(unsigned long addr);
@@ -525,6 +529,15 @@ int set_current_groups(struct group_info *group_info);
 struct audit_context;		/* See audit.c */
 struct mempolicy;
 
+/* task_struct
+进程描述符：每个进程都有一个task_struct结构体，用于描述进程的状态和行为。
+thread_info：每个线程都有一个thread_info结构体，用于描述线程的状态和行为。
+struct mm_struct *mm, *active_mm：进程的内存管理结构体，用于描述进程的内存空间和页表。
+fs_struct *fs：进程的文件系统结构体，用于描述进程的文件系统和目录结构。
+files_struct *files：进程的文件描述符结构体，用于描述进程的打开的文件描述符。
+signal_struct *signal：进程的信号结构体，用于描述进程的信号处理机制。
+*/
+
 struct task_struct {
 	volatile long state;	/* -1 unrunnable, 0 runnable, >0 stopped */
 	struct thread_info *thread_info;
@@ -569,12 +582,34 @@ struct task_struct {
 	unsigned long personality;
 	unsigned did_exec:1;
 	pid_t pid;
-	pid_t tgid;
+	pid_t tgid;/* 线程组ID */
 	/* 
 	 * pointers to (original) parent process, youngest child, younger sibling,
 	 * older sibling, respectively.  (p->father can be replaced with 
 	 * p->parent->pid)
 	 */
+
+	 /* real_parent指代真正创建这个进程的进程（即调用 clone() 或 fork() 的那个进程）。一旦创建，这个字段通常不会改变，除非进程的“创建者”退出。
+	 	parent：指代当前负责这个进程的进程。当进程状态发生变化（如终止）时，信号（如 SIGCHLD）会发送给 parent。
+		在进程创建过程中，real_parent 通常指向创建进程的父进程，而 parent 通常指向创建进程的父进程的父进程。
+		场景一：普通情况（两者相同）
+		调试器（GDB）附着通常，进程的 `parent` 和 `real_parent` 指向同一个进程。比如你在 Shell 中执行 `ls`，那么 Shell 进程既是创建者也是当前的监管者。
+
+		场景二：调试器（GDB）附着
+		假设在 Bash 中运行一个程序 `my_app`，然后你用 GDB 附着它。
+		**创建者**：Bash 是 `my_app` 的 `real_parent`。
+		**调试器附着**：GDB 调用 `ptrace(PTRACE_ATTACH, ...)` 接管 `my_app`。
+    -   此时，`my_app` 的 `parent` 会被修改为 **GDB 进程**。
+    -   而 `real_parent` 依然指向 **Bash**。
+		**结果**：当 `my_app` 终止时，`SIGCHLD` 信号会先发给 GDB（`parent`），否则 GDB 无法感知子进程退出。但如果 GDB 崩溃或分离，内核可以通过 `real_parent` 知道它真正的“父进程”是谁，以便重新托管。
+
+		#### 场景三：“孤儿”进程被收养
+		当一个进程的 **`parent` 或 `real_parent`** 先于它退出（死亡）时，该进程会成为孤儿。内核为了防止野孩子，会让 **PID 为 1 的 init 进程** 收养它们。
+
+		**效果**：init 进程（PID 1）会成为该进程新的 `parent`。
+		**`real_parent`**：依然指向那个已经死去的进程（但由于父进程已死，引用通常被清理或指向 init，具体取决于内核版本实现，一般用于历史追溯）。
+		实际上，核心逻辑是：**`parent` 被改为 init，`real_parent` 通常不会变（除非原创建者已死，可能也会被设为 init，但 `real_parent` 更多体现“源”）。**
+*/
 	struct task_struct *real_parent; /* real parent process (when being debugged) */
 	struct task_struct *parent;	/* parent process */
 	/*
@@ -629,7 +664,7 @@ struct task_struct {
 /* namespace */
 	struct namespace *namespace;
 /* signal handlers */
-	struct signal_struct *signal;
+	struct signal_struct *signal;/* 包括tty struct */
 	struct sighand_struct *sighand;
 
 	sigset_t blocked, real_blocked;

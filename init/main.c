@@ -368,6 +368,8 @@ static void __init smp_init(void)
  * gcc-3.4 accidentally inlines this function, so use noinline.
  */
 
+ /* 在初始化流程的最后，它会调用 rest_init() 函数，
+ 	并使用 kernel_thread() 创建出系统中的第一个“真正”的进程——PID 为 1 的 init 进程和PID 为 2 的 kthreadd 内核管理进程 */
 static void noinline rest_init(void)
 	__releases(kernel_lock)
 {
@@ -413,6 +415,9 @@ void __init parse_early_param(void)
  *	Activate the first processor.
  */
 
+ /* start_kernel() 是进程 0（init_task）执行的第一个 C 语言函数
+ 	进程 0 始终运行在内核态（Kernel Mode），拥有最高的特权级别。这赋予它两项核心使命：
+	系统的总设计师：它在 start_kernel() 函数中，负责完成中断、内存管理、调度器、定时器等所有核心子系统的初始化 */
 asmlinkage void __init start_kernel(void)
 {
 	char * command_line;

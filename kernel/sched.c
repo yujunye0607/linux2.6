@@ -3196,19 +3196,80 @@ long fastcall __sched interruptible_sleep_on_timeout(wait_queue_head_t *q, long 
 
 EXPORT_SYMBOL(interruptible_sleep_on_timeout);
 
+/* linux2.6还提供了新的方式让当前进程进入等待队列睡眠 参考kernel/wait.h __wait_event*/
+
+/*
+ * ============================================================================
+ * sleep_on() 竞态条件（唤醒丢失）
+ * ============================================================================
+ *
+ * 时刻     消费者（进程A）                      生产者（进程B/中断）              队列状态      资源状态
+ * ------------------------------------------------------------------------------------------------
+ * T1       if (!resource_available)            -                              空          不可用
+ *          -> 条件为假，准备睡眠
+ *
+ * T2       [ 危险窗口 ]                        -                              空          不可用
+ *          sleep_on 被调用，但尚未执行入队
+ *
+ * T3       -                                  生产者运行！                     空          可用
+ *                                              resource_available = true
+ *                                              wake_up(&wq)
+ *
+ * T4       -                                  wake_up 检查队列：              空          可用
+ *                                              队列为空，什么也不做
+ *
+ * T5       sleep_on 继续执行：                  -                              有A         可用
+ *          1. 将A加入队列
+ *          2. 设置A为TASK_UNINTERRUPTIBLE
+ *          3. schedule() 让出CPU
+ *
+ * T6       A进入睡眠，等待永远不会到来的唤醒      -                              有A         可用
+ *
+ * ============================================================================
+ * 结果：资源明明可用，但A永远等不到唤醒信号
+ * 根本原因：入队操作和睡眠调用之间存在时间窗口，唤醒信号在此窗口内被丢失
+ * ============================================================================
+ */
 void fastcall __sched sleep_on(wait_queue_head_t *q)
 {
+	// SLEEP_ON_VAR展开如下
+	// unsigned long flags;
+	// wait_queue_t wait;
+	// init_waitqueue_entry(&wait, current);
 	SLEEP_ON_VAR
 
 	current->state = TASK_UNINTERRUPTIBLE;
 
 	SLEEP_ON_HEAD
-	schedule();
+	// SLEEP_ON_HEAD展开如下
+	// spin_lock_irqsave需要传入一个 flags 变量来保存中断状态
+
+	// 	spin_lock_irqsave(&q->lock,flags);关闭CPU中断 加锁
+	// __add_wait_queue(q, &wait);
+	// spin_unlock(&q->lock);释放锁，此时中断尚未恢复
+
+	// 注意：此处add_wait_queue 和 schedule() 之间没有条件检查！
+	// "无条件地把自己放进队列，然后无条件地睡过去"。
+
+	schedule();// 主动让出CPU，进程进入睡眠，schedule会在完成了主要上下文切换后，CPU中断恢复
 	SLEEP_ON_TAIL
+	// SLEEP_ON_TAIL展开如下
+	// spin_lock_irq默认CPU irq中断是开启的 不需要标志位来判断开启与否
+
+	// 	spin_lock_irq(&q->lock);开启中断，加锁等待唤醒
+	// __remove_wait_queue(q, &wait);唤醒后移出等待队列
+	// spin_unlock_irqrestore(&q->lock, flags);恢复中断状态
 }
 
 EXPORT_SYMBOL(sleep_on);
 
+/*
+ * sleep_on_timeout - sleep until a timeout or a signal is received.信号到达或者超时
+ * @q: the waitqueue to sleep on
+ * @timeout: the timeout in jiffies
+ *
+ * This function will sleep until the timeout expires or a signal is received.
+ */
 long fastcall __sched sleep_on_timeout(wait_queue_head_t *q, long timeout)
 {
 	SLEEP_ON_VAR
