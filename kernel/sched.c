@@ -1387,6 +1387,7 @@ task_t * context_switch(runqueue_t *rq, task_t *prev, task_t *next)
 		rq->prev_mm = oldmm;
 	}
 
+	/* last指向prev，使得恢复执行的进程可以获得真正把当前这个进程换出去的那个进程的信息 */
 	/* Here we just switch the register state and the stack. */
 	switch_to(prev, next, prev);
 

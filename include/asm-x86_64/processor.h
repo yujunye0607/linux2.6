@@ -199,7 +199,9 @@ struct i387_fxsave_struct {
 union i387_union {
 	struct i387_fxsave_struct	fxsave;
 };
-
+/*  硬件上下文（Hardware Context） 是指 CPU 在运行一个任务（进程或线程）时，内部所有需要保存和恢复才能让该任务继续执行的硬件状态集合（CPU 寄存器）
+	TSS 结构体 X86_64 架构里用来存储任务状态段 存储内核栈指针
+	ARM架构无该结构体 对应使用SP_EL1专用寄存器来进行存储*/
 struct tss_struct {
 	u32 reserved1;
 	u64 rsp0;	

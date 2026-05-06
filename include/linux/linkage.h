@@ -10,6 +10,7 @@
 #define CPP_ASMLINKAGE
 #endif
 
+/* asmlinkage 是 Linux 内核中一个非常重要的宏，它的作用是告诉编译器：这个函数的参数不是通过寄存器传递的，而是全部通过堆栈（stack）来传递。 */
 #ifndef asmlinkage
 #define asmlinkage CPP_ASMLINKAGE
 #endif

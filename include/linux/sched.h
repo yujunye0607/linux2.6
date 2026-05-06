@@ -656,6 +656,7 @@ struct task_struct {
 /* ipc stuff */
 	struct sysv_sem sysvsem;
 /* CPU-specific state of this task */
+/* 线程上下文 存储本进程的硬件上下文 只要进程被切换出去 内核就会保存其硬件上下文到这里 */
 	struct thread_struct thread;
 /* filesystem information */
 	struct fs_struct *fs;

@@ -37,6 +37,12 @@ struct	rusage {
 	long	ru_nivcsw;		/* involuntary " */
 };
 
+/*
+ * 进程资源限制
+ * @rlim_cur: 当前资源限制
+ * @rlim_max: 最大资源限制
+ * 可以通过调用setrlimit()函数来修改资源限制
+ */
 struct rlimit {
 	unsigned long	rlim_cur;
 	unsigned long	rlim_max;
