@@ -33,6 +33,7 @@
 /*
  * Page offset: 3GB
  */
+/* 内核线性空间的起始地址 */
 #ifndef PAGE_OFFSET
 #define PAGE_OFFSET		(0xc0000000UL)
 #endif

@@ -421,6 +421,16 @@ asm(	".section .text\n"
 /*
  * Create a kernel thread.
  */
+/* 创建内核线程 
+   传统的Unix系统把一些重要的任务委托给周期性执行的进程，这些任务包括刷新磁盘高速缓存，交换出不用的页框，维护网络连接等等。
+   事实上，以严格线性的方式执行这些任务的确效率不高，如果把它们放在后台调度，不管是对它们的函数还是对终端用户进程都能得到较好的响应。
+   因为一些系统进程只运行在内核态，所以现代操作系统把它们的函数委托给内核线程（kernelthread），内核线程不受不必要的用户态上下文的拖累。
+在Linux中，内核线程在以下几方面不同于普通进程：
+    内核线程只运行在内核态，而普通进程既可以运行在内核态，也可以运行在用户
+    态。
+    因为内核线程只运行在内核态，它们只使用大于PAGE_OFFSET的线性地址空间。
+    另一方面，不管在用户态还是在内核态，普通进程可以用4GB的线性地址空间。
+*/
 pid_t kernel_thread(int (*fn)(void *), void *arg, unsigned long flags)
 {
 	struct pt_regs regs;
@@ -433,6 +443,9 @@ pid_t kernel_thread(int (*fn)(void *), void *arg, unsigned long flags)
 	regs.ARM_pc = (unsigned long)kernel_thread_helper;
 	regs.ARM_cpsr = SVC_MODE;
 
+	/* CLONE_VM标志避免复制调用进程的页表：由于新内核线程无论如何都不会访问用户态地址空间，所以这种复制无疑会造成时间和空间的浪费。
+	 * CLONE_UNTRACED标志保证不会有任何进程跟踪新内核线程，即使调用进程被跟踪。
+	 * 传递给do_fork（）的参数&regs表示内核栈的地址，copy_thread（）函数将从这里找到为新线程初始化CPU寄存器的值。 */
 	return do_fork(flags|CLONE_VM|CLONE_UNTRACED, 0, &regs, 0, NULL, NULL);
 }
 EXPORT_SYMBOL(kernel_thread);

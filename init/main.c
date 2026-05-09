@@ -418,6 +418,10 @@ void __init parse_early_param(void)
  /* start_kernel() 是进程 0（init_task）执行的第一个 C 语言函数
  	进程 0 始终运行在内核态（Kernel Mode），拥有最高的特权级别。这赋予它两项核心使命：
 	系统的总设计师：它在 start_kernel() 函数中，负责完成中断、内存管理、调度器、定时器等所有核心子系统的初始化 */
+/* 关于进程0：idle进程（swapper进程），由内核汇编代码创建 唯一的使用静态数据结构的进程
+   在多处理器系统中，每个CPU都有一个进程0。只要打开机器电源，计算机的BIOS就启动某一个CPU，同时禁用其他CPU。
+   运行在CPUO上的swapper进程初始化内核数据结构，然后激活其他的CPU，并通过copy_process（）函数创建另外的swapper进程，
+   把0传递给新创建的swapper进程作为它们的新PID。此外，内核把适当的CPU索引赋给内核所创建的每个进程的thread_info描述符的cpu字段。*/
 asmlinkage void __init start_kernel(void)
 {
 	char * command_line;
