@@ -43,6 +43,16 @@ struct cpu_context_save {
  * low level task data that entry.S needs immediate access to.
  * __switch_to() assumes cpu_context follows immediately after cpu_domain.
  */
+/* 
+线程信息结构体
+preempt_count：32位 用它来跟踪内核抢占和内核控制路径的嵌套
+位              描述
+0~7             抢占计数器（maxvalue=255） 显示禁用CPU的抢占次数 值为0表示允许内核抢占
+8~15            软中断计数器（maxvalue=255） 显示可延时函数被禁用的程度 值为0表示允许可延时函数处于激活状态
+16~27           硬中断计数器（maxvalue=4096） 显示在本地 CPU 上中断处理程序的嵌套数（irq_enter()宏递增值，irq_exit()宏递减它）。
+28	            PREEMPT_ACTIVE标志
+
+*/
 struct thread_info {
 	unsigned long		flags;		/* low level flags */
 	__s32			preempt_count;	/* 0 => preemptable, <0 => bug */

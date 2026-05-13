@@ -12,12 +12,12 @@
 struct workqueue_struct;
 
 struct work_struct {
-	unsigned long pending;
-	struct list_head entry;
-	void (*func)(void *);
-	void *data;
-	void *wq_data;
-	struct timer_list timer;
+	unsigned long pending;//如果函数已经在工作队列链表中，该字段值设为1，否则设为0  
+	struct list_head entry;//指向挂起函数链表前一个或后一个元素的指针  
+	void (*func)(void *);//挂起函数的地址  
+	void *data;//传递给挂起函数的参数，是一个指针  
+	void *wq_data;//通常是指向 cpu_workqueue_struct 描述符的父结点的指针  
+	struct timer_list timer;//用于延迟挂起函数执行的软定时器
 };
 
 #define __WORK_INITIALIZER(n, f, d) {				\

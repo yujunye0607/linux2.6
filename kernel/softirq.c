@@ -71,6 +71,44 @@ static inline void wakeup_softirqd(void)
  */
 #define MAX_SOFTIRQ_RESTART 10
 
+/* 
+__do_softirq（）函数读取本地CPU的软中断掩码并执行与每个设置位相关的可延迟函数。
+由于正在执行一个软中断函数时可能出现新挂起的软中断，所以为了保证可延迟函数的低延迟性，__do_softirq（）一直运行到执行完所有挂起的软中断。
+但是，这种机制可能迫使__do_softirq（）运行很长一段时间，因而大大延迟用户态进程的执行。
+因此，__do_softirq（）只做固定次数的循环，然后就返回。如果还有其余挂起的软中断，
+那么下一节要描述的内核线程ksoftirqd将会在预期的时间内处理它们。下面简单描述
+__do_softirq（）函数执行的操作：
+1.
+    把循环计数器的值初始化为10。
+2.
+    把本地CPU（被local_softirq_pending（）选中的）软中断的位掩码复制到局部
+    变量pending中。
+3.
+    调用local_bh_disable（）增加软中断计数器的值。在可延迟函数开始执行之前应
+    该禁用它们，这似乎有点违反直觉，但确实极有意义。因为在绝大多数情况下可延
+    迟函数是在开中断的状态下运行的，所以在执行__do_softirq（）的过程中可能会
+    产生新的中断。当do_IRQ（）执行irg_exit（）宏时，可能有另外一个__do_softirq（）函数的实例开始执行。
+	这种情况是应该避免的，因为可延迟函数必须以串行的方式在CPU上运行。
+	因此，__do_softirq（）函数的第一个实例禁用可延迟函数，以使每个新的函数实例将会在do_softirg（）函数的第1步就退出。
+4.
+    清除本地CPU的软中断位图，以便可以激活新的软中断（在第2步，已经把位图
+    保存在pending局部变量中）。
+5.
+    执行1ocal_ira_enable（）来激活本地中断。
+6.
+    根据局部变量pending每一位的设置，执行对应的软中断处理函数。回忆一下，
+    下标为n的软中断函数的地址存放在softira_vec[n]->action变量中。
+7.
+    执行local_ira_disable（）以禁用本地中断。
+8.
+    把本地CPU的软中断位掩码复制到局部变量pending中，并且再次递减循环计
+    数器。
+9.如果pending不为0，那么从最后一次循环开始，至少有一个软中断被激活，而
+    且循环计数器仍然是正数，跳转回到第4步。
+10.如果还有更多的挂起软中断，则调用wakeup_softirqd（）唤醒内核线程来处理本
+    地CPU的软中断（见下一节）。
+11.软中断计数器减1，因而重新激活可延迟函数。
+ */
 asmlinkage void __do_softirq(void)
 {
 	struct softirq_action *h;
@@ -113,6 +151,22 @@ restart:
 
 #ifndef __ARCH_HAS_DO_SOFTIRQ
 
+/* 
+如果在这样的一个检查点（1ocal_softirg_pending（）不为0）检测到挂起的软中断，
+内核就调用do_softirq（）来处理它们。
+*/
+/* 
+1.
+	如果in_interrupt（）产生值1，则函数返回。这种情况说明要么在中断上下文中
+    调用了do_softirq（）函数，要么当前禁用软中断。
+2.
+    执行1ocal_irq_save以保存标志的状态值，并禁用本地CPU上的中断。
+3.
+    调用__do_softirq（）函数（参见下面一节）。
+4.
+    执行local_ira_restore以恢复在第2步保存的标志（表示本地是关中断还是
+    开中断）的状态值并返回。
+ */
 asmlinkage void do_softirq(void)
 {
 	__u32 pending;
@@ -192,15 +246,22 @@ inline fastcall void raise_softirq_irqoff(unsigned int nr)
 
 EXPORT_SYMBOL(raise_softirq_irqoff);
 
+/* 软中断触发函数 */
 void fastcall raise_softirq(unsigned int nr)
 {
 	unsigned long flags;
 
-	local_irq_save(flags);
-	raise_softirq_irqoff(nr);
-	local_irq_restore(flags);
+	local_irq_save(flags);//CPSID i 指令设置 I 位（禁用 IRQ）并禁用本地CPU上中断
+	raise_softirq_irqoff(nr);//在一个已经关闭本地中断的环境下，安全地触发一个软中断
+	local_irq_restore(flags);//恢复local_irq_save设置的值并启用本地CPU上中断
 }
 
+/* 
+处理软中断初始化 
+nr 软中断号
+action 软中断处理函数
+data 软中断数据指针
+*/
 void open_softirq(int nr, void (*action)(struct softirq_action*), void *data)
 {
 	softirq_vec[nr].data = data;
@@ -246,6 +307,36 @@ void fastcall __tasklet_hi_schedule(struct tasklet_struct *t)
 
 EXPORT_SYMBOL(__tasklet_hi_schedule);
 
+/* 
+处理tasklet软中断函数
+	1.
+		禁用本地中断。
+	2.
+		获得本地CPU的逻辑号n。
+	3.
+		把tasklet_vec[n]或tasklet_hi_vec[n]指向的链表的地址存人局部变量list。
+	4.
+		把tasklet_vec[n]或tasklet_hi_vec[n]的值赋为NuLL，因此，已调度的tasklet
+		描述符的链表被清空。
+	5.
+		打开本地中断。
+	6.
+		对于list指向的链表中的每个tasklet描述符：
+		a.在多处理器系统上，检查tasklet的TASKLET_STATE_RUN标志。
+		·如果该标志被设置，说明同类型的一个tasklet正在另一个CPU上运行，因
+		此，就把任务描述符重新插人到由tasklet_vec[n]或tasklet_hi_vec[n]
+		指向的链表中，并再次激活TASKLET_SOFTIRQ或HI_SOFTIRQ软中断。
+		这样，当同类型的其他tasklet在其他CPU上运行时，这个tasklet就被延迟。
+		如果TASKLET_STATE_RUN标志未被设置，tasklet就没有在其他CPU上运
+		行，就需要设置这个标志，以便tasklet函数不能在其他CPU上执行。
+		b.通过查看tasklet描述符的count字段，检查tasklet是否被禁止。如果是，就清
+		TASKLET_STATE_RUN标志，并把任务描述符重新插入到由tasklet_vec[n]
+		或tasklet_hi_vec[n]指向的链表中，然后函数再次激活TASKLET_SOFTIRQ
+		或HI_SOFTIRQ软中断。
+		c.如果tasklet被激活，清TASKLET_STATE_SCHED标志，并执行tasklet函数。
+
+注意，除非tasklet函数重新激活自己，否则，tasklet的每次激活至多触发tasklet函数的一次执行。
+*/
 static void tasklet_action(struct softirq_action *a)
 {
 	struct tasklet_struct *list;
@@ -347,6 +438,24 @@ void __init softirq_init(void)
 	open_softirq(HI_SOFTIRQ, tasklet_hi_action, NULL);
 }
 
+/* 在最近的内核版本中，每个CPU都有自己的ksoftirqd/n内核线程（这里，n为CPU的逻辑号）。
+ * 每个ksoftirqd/n内核线程都运行ksoftirqd（）函数，该函数实际上执行下列的循环：
+	for(;;) {
+	set_current_state(TASK_INTERRUPTIBLE );
+	schedule();
+
+		while (local_softirq_pending()) {
+			preempt_disable();
+			do_softirq();
+			preempt_enable();
+			cond_resched();
+		}
+	}
+	当内核线程被唤醒时，就检查1ocal_softirq_pending（）中的软中断位掩码并在必要时
+	调用do_softirq（）。如果没有挂起的软中断，函数把当前进程状态置为
+	TASK_INTERRUPTIBLE，随后，如果当前进程需要（当前thread_info的TIF_NEED_RESCHED
+	标志被设置）就调用cond_resched（）函数来实现进程切换。
+ */
 static int ksoftirqd(void * __bind_cpu)
 {
 	set_user_nice(current, 19);

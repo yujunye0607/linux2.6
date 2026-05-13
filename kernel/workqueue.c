@@ -37,27 +37,35 @@
  */
 struct cpu_workqueue_struct {
 
-	spinlock_t lock;
+	spinlock_t lock;//保护该数据结构的自旋锁
 
-	long remove_sequence;	/* Least-recently added (next to run) */
-	long insert_sequence;	/* Next to add */
+	long remove_sequence;//flush_workqueue（）使用的序列号	/* Least-recently added (next to run) */
+	long insert_sequence;//flush_workqueue（）使用的序列号	/* Next to add */
 
-	struct list_head worklist;
-	wait_queue_head_t more_work;
-	wait_queue_head_t work_done;
+	struct list_head worklist;//挂起链表的头结点 是双向链表的头，链表集中了工作队列中的所有挂起函数。work_struct数据结构用来表示每一个挂起函数
 
-	struct workqueue_struct *wq;
-	task_t *thread;
+	wait_queue_head_t more_work;//等待队列，其中的工作者线程因等待更多的工作而处于睡眠状态
+	wait_queue_head_t work_done;//等待队列，其中的进程由于等待工作队列被刷新而处于睡眠状态
 
-	int run_depth;		/* Detect run_workqueue() recursion depth */
+	struct workqueue_struct *wq;//指向workqueue_struct结构的指针，其中包含该描述符
+	task_t *thread;//指向结构中工作者线程的进程描述符指针
+
+	int run_depth;//run_workqueue（）当前的执行深度（当工作队列链表中的函数阻塞时，这个字段的值会变得比1大）		/* Detect run_workqueue() recursion depth */
 } ____cacheline_aligned;
 
 /*
  * The externally visible workqueue abstraction is an array of
  * per-CPU workqueues:
  */
+
+ /* 
+ 关于工作队列：
+ 它们允许内核函数（非常像可延迟函数）被激活，而且稍后由一种叫做工作者线程（worker thread）的特殊内核线程来执行。
+ 类似于软中断，工作队列是一种异步任务队列，用于处理在内核态进程上下文执行的任务。
+ 他们一个工作在中断上下文中，一个是进程上下文（可睡眠），但他们都不能访问用户态的地址空间
+  */
 struct workqueue_struct {
-	struct cpu_workqueue_struct cpu_wq[NR_CPUS];
+	struct cpu_workqueue_struct cpu_wq[NR_CPUS];//NR_CPUS是系统中CPU的最大数量
 	const char *name;
 	struct list_head list; 	/* Empty if single thread */
 };

@@ -100,20 +100,28 @@ extern void local_bh_enable(void);
    al. should be converted to tasklets, not to softirqs.
  */
 
+/* Linux 2.6 使用有限个软中断。
+在很多场合，tasklet 是足够用的，且更容易编写，因为tasklet 不必是可重入的。 */
+/* 枚举值的大小决定了其优先级 0为最高 */
 enum
 {
-	HI_SOFTIRQ=0,
-	TIMER_SOFTIRQ,
-	NET_TX_SOFTIRQ,
-	NET_RX_SOFTIRQ,
-	SCSI_SOFTIRQ,
-	TASKLET_SOFTIRQ
+	HI_SOFTIRQ=0,//处理高优先级的tasklet
+	TIMER_SOFTIRQ,//和时钟中断相关的tasklet
+	NET_TX_SOFTIRQ,//把数据包发送到网卡
+	NET_RX_SOFTIRQ,//从网卡接收数据包
+	SCSI_SOFTIRQ,//SCSI命令的后台中断处理
+	TASKLET_SOFTIRQ,//常规任务软中断
 };
 
 /* softirq mask and active fields moved to irq_cpustat_t in
  * asm/hardirq.h to get better cache usage.  KAO
  */
 
+ /* 
+软中断的重要数据结构
+action：函数指针，指向实际处理软中断的处理函数
+data：通用指针，传递给处理函数的私有数据
+ */
 struct softirq_action
 {
 	void	(*action)(struct softirq_action *);
@@ -148,14 +156,34 @@ extern void FASTCALL(raise_softirq(unsigned int nr));
      he makes it with spinlocks.
  */
 
+
+/* 
+关于tasklet：tasklet是I/O驱动程序中实现可延迟函数的首选方法。tasklet建立在两个叫
+做HI_SOFTIRQ和TASKLET_SOFTIRQ的软中断之上。几个tasklet可以与同一个软中
+断相关联，每个tasklet执行自己的函数。两个软中断之间没有真正的区别，只不过
+do_softirq（)先执行HI_SOFTIRQ的tasklet，后执行TASKLET_SOFTIRQ的tasklet。
+tasklet和高优先级的tasklet分别存放在tasklet_vec和tasklet_hi_vec数组中。二
+者都包含类型为tasklet_head的NR_CPUS个元素，每个元素都由一个指向tasklet描
+述符链表的指针组成。tasklet描述符是一个tasklet_struct类型的数据结构，其字段如下
+ */
 struct tasklet_struct
 {
-	struct tasklet_struct *next;
-	unsigned long state;
-	atomic_t count;
-	void (*func)(unsigned long);
-	unsigned long data;
+	struct tasklet_struct *next;//指向链表中下一个描述符的指针
+	unsigned long state;//tasklet的状态
+	atomic_t count;//锁计数器
+	void (*func)(unsigned long);//指向tasklet函数的指针
+	unsigned long data;//一个无符号长整数，可以由tasklet函数来使用
 };
+/* 
+tasklet描述符的state字段含有两个标志：
+TASKLET_STATE_SCHED
+    该标志被设置时，表示tasklet是挂起的（曾被调度执行），也意味着tasklet描述符
+    被插入到tasklet_vec和tasklet_hi_vec数组的其中一个链表中。
+TASKLET_STATE_RUN
+    该标志被设置时，表示tasklet正在被执行：在单处理器系统上不使用这个标志，因
+    为没有必要检查特定的tasklet是否在运行。
+*/
+
 
 #define DECLARE_TASKLET(name, func, data) \
 struct tasklet_struct name = { NULL, 0, ATOMIC_INIT(0), func, data }
@@ -194,6 +222,7 @@ static inline void tasklet_unlock_wait(struct tasklet_struct *t)
 
 extern void FASTCALL(__tasklet_schedule(struct tasklet_struct *t));
 
+/* tasklet调度执行函数 */
 static inline void tasklet_schedule(struct tasklet_struct *t)
 {
 	if (!test_and_set_bit(TASKLET_STATE_SCHED, &t->state))
@@ -215,6 +244,7 @@ static inline void tasklet_disable_nosync(struct tasklet_struct *t)
 	smp_mb__after_atomic_inc();
 }
 
+/* 禁止tasklet 只在实例结束后返回 */
 static inline void tasklet_disable(struct tasklet_struct *t)
 {
 	tasklet_disable_nosync(t);
