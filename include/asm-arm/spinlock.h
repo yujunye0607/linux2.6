@@ -14,6 +14,12 @@
  *
  * Unlocked value: 0
  * Locked value: 1
+ * 
+ * slock
+ 	该字段表示自旋锁的状态：值为1表示“未加锁”状态，而任何负数和0都表示“加
+ 	锁”状态。
+ * break_lock
+ 	表示进程正在忙等自旋锁（只在内核支持SMP和内核抢占的情况下使用该标志）。
  */
 typedef struct {
 	volatile unsigned int lock;
@@ -70,6 +76,7 @@ static inline void _raw_spin_unlock(spinlock_t *lock)
 
 /*
  * RWLOCKS
+ * lock是一个32位的字段 通过位数来区分 其中“未锁”标志字段 存放在lock字段的第24位，当没有内核控制路径在读或写时设置该位，否则清0。
  */
 typedef struct {
 	volatile unsigned int lock;

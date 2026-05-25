@@ -29,6 +29,13 @@
 #include <linux/config.h>
 #include <linux/spinlock.h>
 #include <linux/preempt.h>
+/* 顺序锁 
+ * sequence
+  	该字段表示当前的序列号，用于检测数据是否被修改。每个读者都必须在读数据前后两次读顺序计数器，并检查两次读到的值是否相同
+ 	如果不相同，说明新的写者已经开始写并增加了顺序计数器，因此暗示读者刚读到的数据是无效的。
+ * lock
+  	该字段表示当前的自旋锁状态，用于保护数据的访问。
+*/
 
 typedef struct {
 	unsigned sequence;

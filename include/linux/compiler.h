@@ -60,6 +60,12 @@ extern void __chk_io_ptr(void __iomem *);
 #define likely(x)	__builtin_expect(!!(x), 1)
 #define unlikely(x)	__builtin_expect(!!(x), 0)
 
+/* 优化屏障（optimization barrier）原语保证编译程序不会混淆放在原语操作之前的汇编语
+言指令和放在原语操作之后的汇编语言指令，这些汇编语言指令在C中都有对应的语句。
+在Linux中，优化屏障就是barrier（）宏.编译器不能使用存放在CPU寄存器
+中的内存单元的值来优化asm指令前的代码。注意，优化屏障并不保证不使当前CPU把
+汇编语言指令混在一起执行--这是内存屏障的工作。
+ */
 /* Optimization barrier */
 #ifndef barrier
 # define barrier() __memory_barrier()
