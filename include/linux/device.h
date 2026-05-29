@@ -47,6 +47,8 @@ struct class;
 struct class_device;
 struct class_simple;
 
+/* 总线结构体
+关于match 牵红绳的月老 Linux设备和驱动是分离的 一旦两个都注册了 就会进入简单的匹配 匹配上会进入对应驱动的probe函数 */
 struct bus_type {
 	char			* name;
 
@@ -92,6 +94,12 @@ struct bus_attribute {
 	ssize_t (*store)(struct bus_type *, const char * buf, size_t count);
 };
 
+/* 定义总线属性语法糖 
+ * @name: 属性名称
+ * @mode: 属性模式（如 S_IRUGO | S_IWUGO）
+ * @show: 属性读取函数
+ * @store: 属性写入函数
+ */
 #define BUS_ATTR(_name,_mode,_show,_store)	\
 struct bus_attribute bus_attr_##_name = __ATTR(_name,_mode,_show,_store)
 

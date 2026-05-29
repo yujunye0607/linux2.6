@@ -775,6 +775,11 @@ struct devfs_inode {		/*  This structure is for "persistent" inode storage  */
 	gid_t gid;
 };
 
+/* 字段				类型			作用
+magic_number	unsigned int	魔数校验，仅当 CONFIG_DEVFS_DEBUG 开启时存在，用于检测内存损坏或野指针
+info				void *		指向设备驱动私有数据的指针（如设备结构体）
+refcount			atomic_t	原子引用计数，当降为 0 时表示该条目未被使用，可以被释放
+mode				umode_t		文件类型和权限（如 S_IFCHR | 0644） */
 struct devfs_entry {
 #ifdef CONFIG_DEVFS_DEBUG
 	unsigned int magic_number;

@@ -1,0 +1,28 @@
+/* 注册字符设备流程如下 */
+#include <linux/kdev_t.h>
+#include <linux/cdev.h>
+#define HW_NAT_DEVNAME			"hwnat0"
+#define HW_NAT_MAJOR			(121)
+int ppe_reg_ioctl_handler(dev_t dev)
+{
+	int error;
+
+	dev = MKDEV(HW_NAT_MAJOR, 0);
+	error = register_chrdev_region(dev, 1, HW_NAT_DEVNAME);
+
+	if (error < 0)
+		pr_notice("register error!!!!\n");
+
+	cdev_init(&hnat_cdev, &hw_nat_fops);
+	error = cdev_add(&hnat_cdev, dev, 1);
+	if (error)
+		pr_notice("cdev_add error !!!!\n");
+
+ 	hnat_class = class_create(THIS_MODULE, "hnat");
+ 	if (IS_ERR(hnat_class))
+		pr_notice("Error creating hnat class.\n");
+
+ 	device_create(hnat_class, NULL, MKDEV(HW_NAT_MAJOR, 0), NULL, HW_NAT_DEVNAME);
+
+	return 0;
+}

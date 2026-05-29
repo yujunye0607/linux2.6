@@ -6,6 +6,7 @@
 
 #define MAJOR(dev)	((unsigned int) ((dev) >> MINORBITS))
 #define MINOR(dev)	((unsigned int) ((dev) & MINORMASK))
+/* 从主设备号和次设备号构造设备号 */
 #define MKDEV(ma,mi)	(((ma) << MINORBITS) | (mi))
 
 #define print_dev_t(buffer, dev)					\

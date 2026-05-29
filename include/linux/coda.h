@@ -77,6 +77,9 @@ typedef unsigned long u_long;
 typedef unsigned int u_int;
 typedef unsigned short u_short;
 typedef u_long ino_t;
+/* （早期 Linux 2.x 是 16 位，现在是 32 位）
+高 12 位：主设备号（Major），范围 0 ~ 4095
+低 20 位：次设备号（Minor），范围 0 ~ 1,048,575 */
 typedef u_long dev_t;
 typedef void * caddr_t;
 #ifdef DOS

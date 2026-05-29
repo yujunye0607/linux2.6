@@ -2,13 +2,15 @@
 #define _LINUX_CDEV_H
 #ifdef __KERNEL__
 
+/* 字符设备结构体 */
+
 struct cdev {
 	struct kobject kobj;
-	struct module *owner;
-	struct file_operations *ops;
-	struct list_head list;
-	dev_t dev;
-	unsigned int count;
+	struct module *owner; //所属模块
+	struct file_operations *ops; // 字符设备操作函数指针
+	struct list_head list; // 字符设备链表头
+	dev_t dev; // 字符设备号
+	unsigned int count; // 字符设备数量
 };
 
 void cdev_init(struct cdev *, struct file_operations *);

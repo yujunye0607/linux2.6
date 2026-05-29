@@ -153,6 +153,7 @@ __unregister_chrdev_region(unsigned major, unsigned baseminor, int minorct)
 	return cd;
 }
 
+/* 在调用 cdev_add函数向系统注册字符设备之前，应首先调用 register_chrdev_region或 alloc_chrdev_region函数向系统申请设备号 */
 int register_chrdev_region(dev_t from, unsigned count, const char *name)
 {
 	struct char_device_struct *cd;
@@ -178,6 +179,12 @@ fail:
 	return PTR_ERR(cd);
 }
 
+/* 
+register_chrdev_region函数用于已知起始设备的设备号的情况，而alloc_chrdev_region
+用于设备号未知，向系统动态申请未被占用的设备号的情况，函数调用成功之后，会把得到的
+设备号放入第一个参数dev中。alloc_chrdev_region相比于register_chrdev_region的优点在于
+它会自动避开设备号重复的冲突。
+ */
 int alloc_chrdev_region(dev_t *dev, unsigned baseminor, unsigned count,
 			const char *name)
 {
@@ -403,6 +410,7 @@ static struct kobj_type ktype_cdev_dynamic = {
 	.release	= cdev_dynamic_release,
 };
 
+/* 动态分配字符设备cdev结构体 不要和init共用 完成部分初始化 后续手动传入file_operations */
 struct cdev *cdev_alloc(void)
 {
 	struct cdev *p = kmalloc(sizeof(struct cdev), GFP_KERNEL);
@@ -415,6 +423,7 @@ struct cdev *cdev_alloc(void)
 	return p;
 }
 
+/* 初始化字符设备cdev结构体 将其于 file_operations 关联 */
 void cdev_init(struct cdev *cdev, struct file_operations *fops)
 {
 	memset(cdev, 0, sizeof *cdev);
