@@ -1,3 +1,4 @@
+#命令码的设备类型字段为一个“幻数”，可以是 0 ~ 0xff 的值，内核中的 ioctl-number.txt  给出了一些推荐的和已经被使用的“幻数”，新设备驱动定义“幻数”的时候要避免与其冲突。
 Ioctl Numbers
 19 October 1999
 Michael Elizabeth Chastain

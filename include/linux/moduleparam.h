@@ -49,6 +49,11 @@ struct kparam_array
    parameters.  perm sets the visibility in driverfs: 000 means it's
    not there, read bits mean it's readable, write bits mean it's
    writable. */
+
+/* module_param会在sys/module/module_name/parameters下注册一个节点 
+   主要作用是动态设置模块的参数 如
+   注册模块时选择不同参数insmod module_name param1=1 param2=2
+   动态调试模块echo 3 > /sys/module/module_name/parameters/param1 */
 #define __module_param_call(prefix, name, set, get, arg, perm)		\
 	static char __param_str_##name[] = prefix #name;		\
 	static struct kernel_param const __param_##name			\
