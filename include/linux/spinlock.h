@@ -443,10 +443,12 @@ do { \
  * regardless of whether CONFIG_SMP or CONFIG_PREEMPT are set. The various
  * methods are defined as nops in the case they are not required.
  */
+/* spin_trylock() 尝试获取自旋锁，如果锁未被占用则返回true，否则返回false而不是阻塞等待 */
 #define spin_trylock(lock)	__cond_lock(_spin_trylock(lock))
 #define read_trylock(lock)	__cond_lock(_read_trylock(lock))
 #define write_trylock(lock)	__cond_lock(_write_trylock(lock))
 
+/* 在单核系统上 spin_lock() 自动退化为空操作 */
 #define spin_lock(lock)		_spin_lock(lock)
 #define write_lock(lock)	_write_lock(lock)
 #define read_lock(lock)		_read_lock(lock)
@@ -461,6 +463,9 @@ do { \
 #define write_lock_irqsave(lock, flags)	_write_lock_irqsave(lock, flags)
 #endif
 
+/* 尽管spin锁可以防止CPU进程间的影响，但是它不能防止中断以及底半部的影响 所以使用如下的宏 */
+// spin_lock_irq = spin_lock + local_irq_disable
+// spin_lock_bh = spin_lock + local_bh_disable
 #define spin_lock_irq(lock)		_spin_lock_irq(lock)
 #define spin_lock_bh(lock)		_spin_lock_bh(lock)
 

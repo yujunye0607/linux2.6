@@ -62,7 +62,7 @@ static struct file_operations chardev_fops = {
  */
 static loff_t chardev_llseek(struct file *filp, loff_t offset, int whence)
 {
-    struct chardev_data *dev = filp->private_data;
+    struct chardev_data *dev = filp->private_data;//获取私有数据 指向自身 区别于cdev
     loff_t new_pos;
     loff_t max_size = dev->buffer_size;
     
@@ -376,7 +376,7 @@ static int __init chardev_init(void)
         goto err_cdev_del;
     }
     
-    // 创建设备节点
+    // 创建设备节点 会同时添加dev/和sys/device/
     if (device_create(g_class, NULL, g_dev->dev_num, NULL, 
                       DEVICE_NAME) == NULL) {
         printk(KERN_ERR "Failed to create device\n");

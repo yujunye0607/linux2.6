@@ -187,6 +187,7 @@ do {									\
  */
 #if __LINUX_ARM_ARCH__ >= 6
 
+/* 与local_irq_disable()的区别是，local_irq_save()会保存当前CPU的中断状态，也就是CPSR的值 */
 #define local_irq_save(x)					\
 	({							\
 	__asm__ __volatile__(					\

@@ -87,6 +87,7 @@ static inline void __deprecated save_and_cli(unsigned long *x)
 #endif /* CONFIG_SMP */
 
 /* SoftIRQ primitives.  */
+/* 若想禁用中断底半部 应该调用此宏 */
 #define local_bh_disable() \
 		do { add_preempt_count(SOFTIRQ_OFFSET); barrier(); } while (0)
 #define __local_bh_enable() \
