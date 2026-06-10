@@ -6,6 +6,8 @@
 #include <linux/uaccess.h>
 #include <linux/device.h>
 #include <linux/mutex.h>
+#include <linux/wait.h>      // 等待队列头文件
+#include <linux/sched.h>     // 进程状态
 #include "include/my_char_dev.h"
 
 #define MY_CHARDEV_MAJOR 230
@@ -24,7 +26,8 @@ struct chardev_data {
     loff_t buffer_size;     // 缓冲区大小
     loff_t read_pos;        // 当前读位置
     loff_t write_pos;       // 当前写位置
-    struct mutex lock;      // 互斥锁
+    struct mutex lock;      // 互斥锁 由于字符设备拷贝共享数据时可能导致阻塞，所以需要支持睡眠的互斥锁而不是自旋锁
+    wait_queue_head_t wq;   // 等待队列头（用于阻塞写操作）
     struct cdev cdev;       // 字符设备对象，指向内核cdev结构体的指针 是cdev类型 不是指向自己 
     dev_t dev_num;          // 设备号
 };
@@ -133,6 +136,8 @@ static long chardev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg
         dev->read_pos = 0;
         dev->write_pos = 0;
         filp->f_pos = 0;
+        // 清空后缓冲区有空间了，唤醒等待的写进程，方便上层应用调取iotcl时能顺利写入
+        wake_up_interruptible(&dev->wq);
         printk(KERN_INFO "Buffer cleared\n");
         break;
         
@@ -174,6 +179,9 @@ static long chardev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg
         kfree(dev->buffer);
         dev->buffer = new_buffer;
         dev->buffer_size = new_size;
+        
+        // 新缓冲区可能有空间，唤醒等待的写进程
+        wake_up_interruptible(&dev->wq);
         
         printk(KERN_INFO "Buffer size changed to %d bytes\n", new_size);
         break;
@@ -233,6 +241,9 @@ static ssize_t chardev_read(struct file *filp, char __user *buf,
     dev->read_pos = *f_pos;
     ret = to_read;
     
+    // 读取后释放了缓冲区空间，唤醒等待的写进程
+    wake_up_interruptible(&dev->wq);
+    
     printk(KERN_DEBUG "Read %zu bytes at position %lld\n", to_read, *f_pos);
     
 out:
@@ -255,10 +266,42 @@ static ssize_t chardev_write(struct file *filp, const char __user *buf,
     
     // 检查是否有足够空间
     if (*f_pos >= dev->buffer_size) {
-        ret = -ENOSPC;
-        goto out;
+        // 缓冲区已满，判断文件打开方式是否为阻塞
+        if (filp->f_flags & O_NONBLOCK) {
+            // 非阻塞模式：立即返回 -EAGAIN
+            printk(KERN_DEBUG "Write would block (non-blocking mode)\n");
+            ret = -EAGAIN;
+            goto out;
+        }
+        
+        // 阻塞模式：添加到等待队列，进入睡眠
+        printk(KERN_DEBUG "Write blocking: buffer full, going to sleep\n");
+        
+        // 使用 wait_event_interruptible 宏来等待空间可用
+        // 等待条件：写位置小于缓冲区大小（有空间可写）
+        mutex_unlock(&dev->lock);  // 释放锁，让其他进程可以操作
+        
+        // 等待空间可用（可被信号中断）
+        ret = wait_event_interruptible(dev->wq, 
+                                       filp->f_pos < dev->buffer_size);
+        
+        mutex_lock(&dev->lock);  // 重新获取锁
+        
+        if (ret) {
+            // 被信号打断
+            printk(KERN_DEBUG "Write interrupted by signal\n");
+            goto out;
+        }
+        
+        // 被唤醒后，重新计算可写空间
+        if (*f_pos >= dev->buffer_size) {
+            // 虚假唤醒或条件仍不满足，返回错误（理论上不应该发生）
+            ret = -ENOSPC;
+            goto out;
+        }
     }
     
+    // 执行实际写入
     available = dev->buffer_size - *f_pos;
     to_write = min(count, available);
     
@@ -294,8 +337,15 @@ static int chardev_open(struct inode *inode, struct file *filp)
     filp->f_pos = dev->read_pos;
     
     mutex_lock(&dev->lock);
-    printk(KERN_INFO "Device opened, read_pos=%lld, write_pos=%lld\n",
-           dev->read_pos, dev->write_pos);
+    printk(KERN_INFO "Device opened, read_pos=%lld, write_pos=%lld, f_flags=0x%x\n",
+           dev->read_pos, dev->write_pos, filp->f_flags);
+    
+    // 打印打开模式信息
+    if (filp->f_flags & O_NONBLOCK) {
+        printk(KERN_INFO "Device opened in NON-BLOCKING mode\n");
+    } else {
+        printk(KERN_INFO "Device opened in BLOCKING mode\n");
+    }
     mutex_unlock(&dev->lock);
     
     return 0;
@@ -329,6 +379,8 @@ static int __init chardev_init(void)
     g_dev->dev_num = MKDEV(my_chardev_major, 0);
     // 初始化互斥锁
     mutex_init(&g_dev->lock);
+    // 初始化等待队列头
+    init_waitqueue_head(&g_dev->wq);
     
     // 分配缓冲区
     g_dev->buffer_size = BUFFER_SIZE;
@@ -387,6 +439,8 @@ static int __init chardev_init(void)
     printk(KERN_INFO "Device initialized successfully\n");
     printk(KERN_INFO "You can use: mknod /dev/%s c %d %d\n", 
            DEVICE_NAME, major, minor);
+    printk(KERN_INFO "Blocking mode: write will sleep when buffer is full\n");
+    printk(KERN_INFO "Non-blocking mode: write returns -EAGAIN when buffer is full\n");
     
     return 0;
 
@@ -409,6 +463,9 @@ err_free_dev:
 static void __exit chardev_exit(void)
 {
     printk(KERN_INFO "Exiting character device\n");
+    
+    // 唤醒所有等待的进程，防止内存泄漏
+    wake_up_interruptible(&g_dev->wq);
     
     // 销毁设备节点和 class
     device_destroy(g_class, g_dev->dev_num);
